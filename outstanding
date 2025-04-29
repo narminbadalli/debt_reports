@@ -1,0 +1,56 @@
+SELECT
+    COALESCE(dsb_sum.total_disbursement, 0) AS total_disbursement,
+    COALESCE(pay_sum.total_payment, 0) AS total_payment,
+    dsb_sum.CREDITOR_NAME,
+    dsb_sum.LO_NO,
+    dsb_sum.TRANCHE_CURRENCY,
+    (COALESCE(dsb_sum.total_disbursement, 0) - COALESCE(pay_sum.total_payment, 0)) AS remaining_balance
+FROM
+    (
+        SELECT
+            SUM(disb.AMT_CU_BASE) AS total_disbursement,
+            loan.CREDITOR_NAME,
+            disb.LO_NO,
+            loan.TRANCHE_CURRENCY
+        FROM
+            DMFASRPT.LOAN_TRANCHES loan
+            INNER JOIN DMFASRPT.DSB_TRANS disb ON loan.LOAN_ID = disb.LO_NO
+                AND loan.TRANCHE_NO = disb.TRA_NO
+            INNER JOIN DMFASRPT.CD_NMS name ON disb.CG_MEDIUM = name.CG_NO
+                AND disb.CD_MEDIUM = name.CD_CODE
+        WHERE
+            name.LA_ID = 1
+            AND loan.DEBT_SOURCE = 'EXTERNAL'
+            AND loan.STATUS = 'ACTIVE'
+        GROUP BY
+            loan.CREDITOR_NAME,
+            disb.LO_NO,
+            loan.TRANCHE_CURRENCY
+    ) dsb_sum
+LEFT JOIN
+    (
+        SELECT
+            SUM(pay.AMT_CU_BASE) AS total_payment,
+            loan.CREDITOR_NAME,
+            pay.LO_NO,
+            loan.TRANCHE_CURRENCY
+        FROM
+            DMFASRPT.LOAN_TRANCHES loan
+            INNER JOIN DMFASRPT.DEBT_SERV_OPERS pay ON loan.LOAN_ID = pay.LO_NO
+                AND pay.TRA_NO = loan.TRANCHE_NO
+            INNER JOIN DMFASRPT.CD_NMS tr ON pay.CD_TRNS_TYP = tr.CD_CODE
+                AND tr.CG_NO = pay.CG_TRNS_TYP
+        WHERE
+            loan.DEBT_SOURCE = 'EXTERNAL'
+            AND loan.STATUS = 'ACTIVE'
+            AND tr.LA_ID = '1'
+            AND pay.CD_TRNS_TYP IN ('11','12','15','18')
+        GROUP BY
+            loan.CREDITOR_NAME,
+            pay.LO_NO,
+            loan.TRANCHE_CURRENCY
+    ) pay_sum
+ON dsb_sum.LO_NO = pay_sum.LO_NO
+AND dsb_sum.TRANCHE_CURRENCY = pay_sum.TRANCHE_CURRENCY
+ORDER BY
+    dsb_sum.CREDITOR_NAME ASC;
